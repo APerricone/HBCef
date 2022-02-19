@@ -1,0 +1,9 @@
+cef_win32/**
+cef_win64/**
+cef_linux32/**
+cef_linux64/**
+cef_mac32/**
+cef_mac64/**
+**/*.exe
+.hbmk/**
+

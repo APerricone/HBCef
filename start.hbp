@@ -1,0 +1,16 @@
+main.prg
+lib.cpp
+
+# Force c++ mode
+-cpp
+# Incremental
+-inc
+#unicode 
+-winuni
+
+-Icef_win64
+-Icef_win64/include
+-Lcef_win64/Release
+-Lcef_win64/build/libcef_dll_wrapper/Release
+-llibcef_dll_wrapper
+-llibcef
