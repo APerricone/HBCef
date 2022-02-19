@@ -6,4 +6,4 @@ cef_mac32/**
 cef_mac64/**
 **/*.exe
 .hbmk/**
-
+test*/**

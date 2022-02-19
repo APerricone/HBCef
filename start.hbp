@@ -8,9 +8,20 @@ lib.cpp
 #unicode 
 -winuni
 
--Icef_win64
--Icef_win64/include
--Lcef_win64/Release
--Lcef_win64/build/libcef_dll_wrapper/Release
+# windows x64
+-Icef_win64{win&x86_64}
+-Icef_win64/include{win&x86_64}
+-Lcef_win64/Release{win&x86_64}
+-Lcef_win64/build/libcef_dll_wrapper/Release{win&x86_64}
+# windows x86
+-Icef_win32{win&x86}
+-Icef_win32/include{win&x86}
+-Lcef_win32/Release{win&x86}
+-Lcef_win32/build/libcef_dll_wrapper/Release{win&x86}
+# TODO: add linux and darwin
+
 -llibcef_dll_wrapper
 -llibcef
+
+-oTest${hb_plat}${hb_cpu}/
+-workdir=./.hbmk/${hb_plat}/${hb_comp}

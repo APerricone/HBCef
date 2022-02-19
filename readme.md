@@ -15,5 +15,6 @@ and extract it on a subfolder renaming it in minimal way according to the versio
 It is ok the **Minimal Distribution**
 Use CMake to build the wrapper, setting where to build in a folder called "build"
 
-Remember to copy with the executable all folder Release and Resource
+Remember to copy with the executable all folder Release and Resource, default output is test* folder
+
 
