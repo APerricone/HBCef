@@ -8,8 +8,31 @@
 #include <list>
 #include <base/cef_callback.h>
 #include <wrapper/cef_closure_task.h>
+#if defined(CEF_X11)
+#include <X11/Xlib.h>
+#include "include/base/cef_logging.h"
+#endif
 
-// copying from https://bitbucket.org/chromiumembedded/cef/src/master/tests/cefsimple/?at=master
+#if defined(CEF_X11)
+namespace {
+
+int XErrorHandlerImpl(Display* display, XErrorEvent* event) {
+  LOG(WARNING) << "X error received: "
+               << "type " << event->type << ", "
+               << "serial " << event->serial << ", "
+               << "error_code " << static_cast<int>(event->error_code) << ", "
+               << "request_code " << static_cast<int>(event->request_code)
+               << ", "
+               << "minor_code " << static_cast<int>(event->minor_code);
+  return 0;
+}
+
+int XIOErrorHandlerImpl(Display* display) {
+  return 0;
+}
+
+}  // namespace
+#endif  // defined(CEF_X11)
 
 // Implement application-level callbacks for the browser process.
 class SimpleApp : public CefApp, public CefBrowserProcessHandler {
@@ -92,12 +115,10 @@ private:
     IMPLEMENT_REFCOUNTING(SimpleHandler);
 };
 
-HB_FUNC(CEFSIMPLE) {
-    int argc = hb_cmdargARGC();
-    char ** argv = hb_cmdargARGV();
-
+HB_FUNC(CEF_LOOP) {
     // Enable High-DPI support on Windows 7 or newer.
     CefEnableHighDPISupport();
+
     void* sandbox_info = nullptr;
 #if defined(CEF_USE_SANDBOX)
     // Manage the life span of the sandbox information object. This is necessary
@@ -110,6 +131,8 @@ HB_FUNC(CEFSIMPLE) {
     hb_winmainArgGet(&hInstance,nullptr,nullptr);
     CefMainArgs main_args(hInstance);
 #else
+    int argc = hb_cmdargARGC();
+    char ** argv = hb_cmdargARGV();
     CefMainArgs main_args(argc, argv);
 #endif
     int exit_code = CefExecuteProcess(main_args, nullptr, sandbox_info);
@@ -120,7 +143,11 @@ HB_FUNC(CEFSIMPLE) {
     }        
     // Parse command-line arguments for use in this method.
     CefRefPtr<CefCommandLine> command_line = CefCommandLine::CreateCommandLine();
+#ifdef OS_WIN
     command_line->InitFromString(::GetCommandLineW());
+#else
+    command_line->InitFromArgv(argc, argv);
+#endif
 
     // Specify CEF global settings here.
     CefSettings settings;
@@ -199,13 +226,14 @@ public:
     bool OnPopupBrowserViewCreated( CefRefPtr<CefBrowserView> browser_view,
                                     CefRefPtr<CefBrowserView> popup_browser_view,
                                     bool is_devtools) override {
-    // Create a new top-level Window for the popup. It will show itself after
-    // creation.
-    CefWindow::CreateTopLevelWindow(new SimpleWindowDelegate(popup_browser_view));
+        (is_devtools);
+        // Create a new top-level Window for the popup. It will show itself after
+        // creation.
+        CefWindow::CreateTopLevelWindow(new SimpleWindowDelegate(popup_browser_view));
 
-    // We created the Window.
-    return true;
-}
+        // We created the Window.
+        return true;
+    }
 
 private:
     IMPLEMENT_REFCOUNTING(SimpleBrowserViewDelegate);
@@ -322,6 +350,42 @@ void SimpleHandler::PlatformTitleChange(CefRefPtr<CefBrowser> browser,
     if (hwnd)
         SetWindowText(hwnd, std::wstring(title).c_str());
 }
+#elif defined(OS_LINUX)
+void SimpleHandler::PlatformTitleChange(CefRefPtr<CefBrowser> browser,
+                                        const CefString& title) {
+  std::string titleStr(title);
+
+#if defined(CEF_X11)
+  // Retrieve the X11 display shared with Chromium.
+  ::Display* display = cef_get_xdisplay();
+  DCHECK(display);
+
+  // Retrieve the X11 window handle for the browser.
+  ::Window window = browser->GetHost()->GetWindowHandle();
+  if (window == kNullWindowHandle)
+    return;
+
+  // Retrieve the atoms required by the below XChangeProperty call.
+  const char* kAtoms[] = {"_NET_WM_NAME", "UTF8_STRING"};
+  Atom atoms[2];
+  int result =
+      XInternAtoms(display, const_cast<char**>(kAtoms), 2, false, atoms);
+  if (!result)
+    NOTREACHED();
+
+  // Set the window title.
+  XChangeProperty(display, window, atoms[0], atoms[1], 8, PropModeReplace,
+                  reinterpret_cast<const unsigned char*>(titleStr.c_str()),
+                  titleStr.size());
+
+  // TODO(erg): This is technically wrong. So XStoreName and friends expect
+  // this in Host Portable Character Encoding instead of UTF-8, which I believe
+  // is Compound Text. This shouldn't matter 90% of the time since this is the
+  // fallback to the UTF8 property above.
+  XStoreName(display, browser->GetHost()->GetWindowHandle(), titleStr.c_str());
+#endif  // defined(CEF_X11)
+}
+
 #endif
 
 
@@ -394,8 +458,8 @@ void SimpleHandler::OnLoadError(CefRefPtr<CefBrowser> browser,
 void SimpleHandler::CloseAllBrowsers(bool force_close) {
     if(!CefCurrentlyOn(TID_UI)) {
         // Execute on the UI thread.
-        //CefPostTask(TID_UI, base::BindOnce(&SimpleHandler::CloseAllBrowsers, this,
-        //                               force_close));
+        CefPostTask(TID_UI, base::BindOnce(&SimpleHandler::CloseAllBrowsers, this,
+                                       force_close));
         return;
     }
 

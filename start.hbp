@@ -8,6 +8,8 @@ lib.cpp
 #unicode 
 -winuni
 
+-cflag=-DNDEBUG
+
 # windows x64
 -Icef_win64{win&x86_64}
 -Icef_win64/include{win&x86_64}
@@ -18,7 +20,22 @@ lib.cpp
 -Icef_win32/include{win&x86}
 -Lcef_win32/Release{win&x86}
 -Lcef_win32/build/libcef_dll_wrapper/Release{win&x86}
-# TODO: add linux and darwin
+# Mac (only 64)
+-Icef_mac64{darwin}
+-Icef_mac64/include{darwin}
+-Lcef_mac64/Release{darwin}
+-Lcef_mac64/build/libcef_dll_wrapper/Release{darwin}
+# linux 32bit
+-Icef_linux32{linux&x86}
+-Icef_linux32/include{linux&x86}
+-Lcef_linux32/Release{linux&x86}
+-Lcef_linux32/build/libcef_dll_wrapper/Release{linux&x86}
+# linux 64bit
+-Icef_linux64{linux&x86_64}
+-Icef_linux64/include{linux&x86_64}
+-Lcef_linux64/Release{linux&x86_64}
+-Lcef_linux64/build/libcef_dll_wrapper/Release{linux&x86_64}
+
 
 -llibcef_dll_wrapper
 -llibcef
