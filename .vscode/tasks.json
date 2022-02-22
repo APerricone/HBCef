@@ -11,7 +11,7 @@
 			],
 			"label": "HBMK2: Builda start.hbp",
 			"windows": {
-				"setupBatch": "d:\\harbour\\start64.bat"
+				"setupBatch": "c:\\harbour\\start64.bat"
 			}
 		}
 	]

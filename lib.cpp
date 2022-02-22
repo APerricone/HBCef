@@ -1,4 +1,5 @@
 #include <hbapi.h>
+#include <hbapiitm.h>
 #include <wrapper/cef_helpers.h>
 #include <cef_app.h>
 #include <views/cef_window.h>
@@ -12,6 +13,8 @@
 #include <X11/Xlib.h>
 #include "include/base/cef_logging.h"
 #endif
+
+PHB_ITEM pOnInitialized = 0;
 
 #if defined(CEF_X11)
 namespace {
@@ -58,7 +61,7 @@ class SimpleHandler : public CefClient,
                       public CefLifeSpanHandler,
                       public CefLoadHandler {
 public:
-    explicit SimpleHandler(bool use_views);
+    explicit SimpleHandler();
     ~SimpleHandler();
 
     // Provide access to the single global instance of this object.
@@ -98,13 +101,6 @@ public:
     static bool IsChromeRuntimeEnabled();
 
 private:
-    // Platform-specific implementation.
-    void PlatformTitleChange(CefRefPtr<CefBrowser> browser,
-                           const CefString& title);
-
-    // True if the application is using the Views framework.
-    const bool use_views_;
-
     // List of existing browser windows. Only accessed on the CEF UI thread.
     typedef std::list<CefRefPtr<CefBrowser>> BrowserList;
     BrowserList browser_list_;
@@ -116,6 +112,10 @@ private:
 };
 
 HB_FUNC(CEF_LOOP) {
+    if(HB_ISEVALITEM(1)) {
+        pOnInitialized = hb_itemNew(hb_param(1, HB_IT_EVALITEM));
+    }
+
     // Enable High-DPI support on Windows 7 or newer.
     CefEnableHighDPISupport();
 
@@ -246,6 +246,11 @@ SimpleApp::SimpleApp() {}
 
 void SimpleApp::OnContextInitialized() {
     CEF_REQUIRE_UI_THREAD();
+    if(pOnInitialized)
+        hb_evalBlock0(pOnInitialized);
+}
+
+HB_FUNC(CEF_CREATETOPLEVELBROWSER) {
 
     CefRefPtr<CefCommandLine> command_line =
         CefCommandLine::GetGlobalCommandLine();
@@ -253,10 +258,10 @@ void SimpleApp::OnContextInitialized() {
     // Create the browser using the Views framework if "--use-views" is specified
     // via the command-line. Otherwise, create the browser using the native
     // platform framework.
-    const bool use_views = command_line->HasSwitch("use-views");
+    const bool use_views = true;
 
     // SimpleHandler implements browser-level callbacks.
-    CefRefPtr<SimpleHandler> handler(new SimpleHandler(use_views));
+    CefRefPtr<SimpleHandler> handler(new SimpleHandler());
 
     // Specify CEF browser settings here.
     CefBrowserSettings browser_settings;
@@ -265,31 +270,17 @@ void SimpleApp::OnContextInitialized() {
 
     // Check if a "--url=" value was provided via the command-line. If so, use
     // that instead of the default URL.
-    url = command_line->GetSwitchValue("url");
-    if(url.empty())
-        url = "http://www.google.com";
+    url = hb_parc(1);
+    if(url.empty()) url = "https://www.google.com/";
 
-    if(use_views) {
-        // Create the BrowserView.
-        CefRefPtr<CefBrowserView> browser_view = CefBrowserView::CreateBrowserView(
-            handler, url, browser_settings, nullptr, nullptr,
-            new SimpleBrowserViewDelegate());
+    // Create the BrowserView.
+    CefRefPtr<CefBrowserView> browser_view = CefBrowserView::CreateBrowserView(
+        handler, url, browser_settings, nullptr, nullptr,
+        new SimpleBrowserViewDelegate());
 
-        // Create the Window. It will show itself after creation.
-        CefWindow::CreateTopLevelWindow(new SimpleWindowDelegate(browser_view));
-    } else {
-        // Information used when creating the native window.
-        CefWindowInfo window_info;
-
-#if defined(OS_WIN)
-        // On Windows we need to specify certain flags that will be passed to
-        // CreateWindowEx().
-        window_info.SetAsPopup(nullptr, "cefsimple");
-#endif
-        // Create the first browser window.
-        CefBrowserHost::CreateBrowser(window_info, handler, url, browser_settings,
-                                  nullptr, nullptr);
-    }
+    // Create the Window. It will show itself after creation.
+    CefWindow::CreateTopLevelWindow(new SimpleWindowDelegate(browser_view));
+    hb_ret();
 }
 
 CefRefPtr<CefClient> SimpleApp::GetDefaultClient() {
@@ -310,7 +301,7 @@ std::string GetDataURI(const std::string& data, const std::string& mime_type) {
 
 }  // namespace
 
-SimpleHandler::SimpleHandler(bool use_views) : use_views_(use_views), is_closing_(false) {
+SimpleHandler::SimpleHandler() : is_closing_(false) {
     DCHECK(!g_instance);
     g_instance = this;
 }
@@ -328,66 +319,15 @@ void SimpleHandler::OnTitleChange(CefRefPtr<CefBrowser> browser,
                                   const CefString& title) {
     CEF_REQUIRE_UI_THREAD();
 
-    if(use_views_) {
-        // Set the title of the window using the Views framework.
-        CefRefPtr<CefBrowserView> browser_view =
-            CefBrowserView::GetForBrowser(browser);
-        if(browser_view) {
-            CefRefPtr<CefWindow> window = browser_view->GetWindow();
-            if(window)
-                window->SetTitle(title);
-        }
-    } else if(!IsChromeRuntimeEnabled()) {
-        // Set the title of the window using platform APIs.
-        PlatformTitleChange(browser, title);
+    // Set the title of the window using the Views framework.
+    CefRefPtr<CefBrowserView> browser_view =
+        CefBrowserView::GetForBrowser(browser);
+    if(browser_view) {
+        CefRefPtr<CefWindow> window = browser_view->GetWindow();
+        if(window)
+            window->SetTitle(title);
     }
 }
-
-#if defined(OS_WIN)
-void SimpleHandler::PlatformTitleChange(CefRefPtr<CefBrowser> browser,
-                                        const CefString& title) {
-    CefWindowHandle hwnd = browser->GetHost()->GetWindowHandle();
-    if (hwnd)
-        SetWindowText(hwnd, std::wstring(title).c_str());
-}
-#elif defined(OS_LINUX)
-void SimpleHandler::PlatformTitleChange(CefRefPtr<CefBrowser> browser,
-                                        const CefString& title) {
-  std::string titleStr(title);
-
-#if defined(CEF_X11)
-  // Retrieve the X11 display shared with Chromium.
-  ::Display* display = cef_get_xdisplay();
-  DCHECK(display);
-
-  // Retrieve the X11 window handle for the browser.
-  ::Window window = browser->GetHost()->GetWindowHandle();
-  if (window == kNullWindowHandle)
-    return;
-
-  // Retrieve the atoms required by the below XChangeProperty call.
-  const char* kAtoms[] = {"_NET_WM_NAME", "UTF8_STRING"};
-  Atom atoms[2];
-  int result =
-      XInternAtoms(display, const_cast<char**>(kAtoms), 2, false, atoms);
-  if (!result)
-    NOTREACHED();
-
-  // Set the window title.
-  XChangeProperty(display, window, atoms[0], atoms[1], 8, PropModeReplace,
-                  reinterpret_cast<const unsigned char*>(titleStr.c_str()),
-                  titleStr.size());
-
-  // TODO(erg): This is technically wrong. So XStoreName and friends expect
-  // this in Host Portable Character Encoding instead of UTF-8, which I believe
-  // is Compound Text. This shouldn't matter 90% of the time since this is the
-  // fallback to the UTF8 property above.
-  XStoreName(display, browser->GetHost()->GetWindowHandle(), titleStr.c_str());
-#endif  // defined(CEF_X11)
-}
-
-#endif
-
 
 void SimpleHandler::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     CEF_REQUIRE_UI_THREAD();

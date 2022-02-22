@@ -7,3 +7,7 @@ cef_mac64/**
 **/*.exe
 .hbmk/**
 test*/**
+cefApp.prg
+cefBrowser.prg
+lib_test.cpp
+lib_textC.cpp

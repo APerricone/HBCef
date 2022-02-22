@@ -9,6 +9,11 @@ lib.cpp
 -winuni
 
 -cflag=-DNDEBUG
+# TO DEBUG decomment these lines and change -DNDEBUG to -D_DEBUG
+#-debug
+#-cflag=/Od
+#-gc3
+
 
 # windows x64
 -Icef_win64{win&x86_64}
