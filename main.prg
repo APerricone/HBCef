@@ -3,6 +3,7 @@ PROC Main()
     cef_Loop({|| CreateWindow()})    
 return
 
-proc CreateWindow()
-    cef_CreateTopLevelBrowser('https://www.google.com/')
+proc CreateWindow()    
+    LOCAL oBrowser := cef_TopLevelBrowser():New(800,500)
+    oBrowser:loadUrl('https://www.google.com/')
 return    

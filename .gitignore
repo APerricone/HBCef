@@ -11,3 +11,4 @@ cefApp.prg
 cefBrowser.prg
 lib_test.cpp
 lib_textC.cpp
+**/*.pdb

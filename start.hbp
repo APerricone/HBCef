@@ -1,5 +1,11 @@
 main.prg
+
 lib.cpp
+hbCefItem.cpp
+
+hbClasses.prg
+refCounted.cpp
+topLevelBrowser.cpp
 
 # Force c++ mode
 -cpp
@@ -9,11 +15,13 @@ lib.cpp
 -winuni
 
 -cflag=-DNDEBUG
-# TO DEBUG decomment these lines and change -DNDEBUG to -D_DEBUG
+# TO DEBUG decomment these lines, change -DNDEBUG to -D_DEBUG and change library folder from Release to Debug
 #-debug
-#-cflag=/Od
 #-gc3
-
+#-cflag=-D_ITERATOR_DEBUG_LEVEL=0
+#-cflag=/Od{win}
+#-cflag=/MTd{win}
+# END DEBUG LINES -- TODO: add linux lines
 
 # windows x64
 -Icef_win64{win&x86_64}
