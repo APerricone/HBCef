@@ -1,6 +1,7 @@
 #include "hbcef.h"
 #include <hbapi.h>
 #include <hbapiitm.h>
+#include <hbapistr.h>
 #include <wrapper/cef_helpers.h>
 #include <cef_app.h>
 #include <views/cef_window.h>
@@ -10,6 +11,8 @@
 #include <list>
 #include <base/cef_callback.h>
 #include <wrapper/cef_closure_task.h>
+#include <cef_version.h>
+#include <map>
 #if defined(CEF_X11)
 #include <X11/Xlib.h>
 #include "include/base/cef_logging.h"
@@ -40,8 +43,8 @@ int XIOErrorHandlerImpl(Display* display) {
 
 // Implement application-level callbacks for the browser process.
 class SimpleApp : public CefApp, public CefBrowserProcessHandler {
-    public:
-    SimpleApp();
+public:
+    SimpleApp() { }
 
     // CefApp methods:
     CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
@@ -50,9 +53,11 @@ class SimpleApp : public CefApp, public CefBrowserProcessHandler {
 
     // CefBrowserProcessHandler methods:
     void OnContextInitialized() override;
-    CefRefPtr<CefClient> GetDefaultClient() override;
 
 private:
+    CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
+        return SimpleHandler::GetInstance();
+    }
     // Include the default reference counting implementation.
     IMPLEMENT_REFCOUNTING(SimpleApp);
 };
@@ -71,7 +76,7 @@ HB_FUNC(CEF_LOOP) {
     // for sandbox support on Windows. See cef_sandbox_win.h for complete details.
     CefScopedSandboxInfo scoped_sandbox;
     sandbox_info = scoped_sandbox.sandbox_info();
-#endif    
+#endif
 #ifdef OS_WIN
     HINSTANCE hInstance;
     hb_winmainArgGet(&hInstance,nullptr,nullptr);
@@ -86,7 +91,8 @@ HB_FUNC(CEF_LOOP) {
         // The sub-process has completed so return here.
         hb_retni(exit_code);
         return;
-    }        
+    }
+    /*
     // Parse command-line arguments for use in this method.
     CefRefPtr<CefCommandLine> command_line = CefCommandLine::CreateCommandLine();
 #ifdef OS_WIN
@@ -94,16 +100,17 @@ HB_FUNC(CEF_LOOP) {
 #else
     command_line->InitFromArgv(argc, argv);
 #endif
-
+    */
     // Specify CEF global settings here.
     CefSettings settings;
-    if(command_line->HasSwitch("enable-chrome-runtime")) {
+    /*if (command_line->HasSwitch("enable-chrome-runtime")) {
         // Enable experimental Chrome runtime. See issue #2969 for details.
         settings.chrome_runtime = true;
-    }
-#if !defined(CEF_USE_SANDBOX)    
+    }*/
+#if !defined(CEF_USE_SANDBOX)
     settings.no_sandbox = true;
 #endif
+    settings.log_severity = LOGSEVERITY_VERBOSE;
 
     // SimpleApp implements application-level callbacks for the browser process.
     // It will create the first browser instance in OnContextInitialized() after
@@ -125,19 +132,12 @@ HB_FUNC(CEF_LOOP) {
     return;
 }
 
-SimpleApp::SimpleApp() {}
-
 void SimpleApp::OnContextInitialized() {
     CEF_REQUIRE_UI_THREAD();
+    CefRefPtr<SimpleHandler> handler(new SimpleHandler());
     if(pOnInitialized)
         hb_evalBlock0(pOnInitialized);
 }
-
-CefRefPtr<CefClient> SimpleApp::GetDefaultClient() {
-    // Called when a new browser window is created via the Chrome runtime UI.
-    return SimpleHandler::GetInstance();
-}
-
 
 namespace {
 
@@ -270,4 +270,55 @@ bool SimpleHandler::IsChromeRuntimeEnabled() {
         value = command_line->HasSwitch("enable-chrome-runtime") ? 1 : 0;
     }
     return value == 1;
+}
+
+HB_FUNC(CEF_VERSIONSTR) { hb_retc(CEF_VERSION); }
+
+void SimpleHandler::OnContextCreated(  CefRefPtr<CefBrowser> browser,
+                                    CefRefPtr<CefFrame> frame,
+                                    CefRefPtr<CefV8Context> context)
+{
+    auto callback = registeredCallbacks.find(browser.get());
+    if(callback!=registeredCallbacks.end()) {
+        (callback->second)->OnContextCreated(browser,frame,context);
+    }
+}
+
+void SimpleHandler::RegisterContextCreated(CefRefPtr<CefBrowser> browser, MyBrowserCallbacks* callback) {
+    if(callback==0) {
+        auto currCallback = registeredCallbacks.find(browser.get());
+        if(currCallback!=registeredCallbacks.end()) {
+            registeredCallbacks.erase(browser.get());
+        }
+    } else {
+        registeredCallbacks.insert_or_assign(browser.get(), callback);
+    }
+}
+
+CefString hb_parCefString(int p) {
+    PHB_ITEM pItem = hb_param(p, HB_IT_STRING);
+    if(pItem) {
+        return hbToString(pItem);
+    }
+    return CefString();
+}
+
+CefString hbToString(PHB_ITEM pItem) {
+#if defined(CEF_STRING_TYPE_UTF16) || defined(CEF_STRING_TYPE_WIDE)
+    void * hStr;
+    HB_SIZE len;
+    const HB_WCHAR* hb_str = hb_itemGetStrU16(pItem,HB_CDP_ENDIAN_NATIVE,&hStr,&len);
+    CefString val = CefString(hb_str,len);
+    hb_strfree(hStr);
+    return val;
+#elif defined(CEF_STRING_TYPE_UTF8)
+    void * hStr;
+    HB_SIZE len;
+    const char * hb_str = hb_itemGetStrUTF8(pItem,HB_CDP_ENDIAN_NATIVE,&hStr,&len);
+    CefString val = CefString(hb_str,len);
+    hb_strfree(hStr);
+    return val;
+#else
+#error "unknow CefString"
+#endif
 }

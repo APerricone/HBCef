@@ -7,12 +7,15 @@ class cef_RefCounted
     DESTRUCTOR Delete()
 
     METHOD COPY OPERATOR ":="
-endclass 
+endclass
 
 class cef_TopLevelBrowser inherit cef_RefCounted
-    
+
+    DATA bOnContextCreated
+
     CONSTRUCTOR new(nWidth,nHeight)
 
     METHOD loadUrl(cUrl)
+    METHOD addJavaScript(cName, oJS)
 endclass
 

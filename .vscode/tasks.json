@@ -1,18 +1,28 @@
 {
 	"version": "2.0.0",
+	"problemMatcher": [
+		"$harbour",
+		"$msCompile"
+	],
 	"tasks": [
 		{
+			"label": "HBMK2: Build main",
+			"input": "main.prg",
+			"type": "HBMK2",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"extraArgs": ["start.hbp"],
+			"windows": {"setupBatch": "c:\\harbour\\start64.bat"}			
+		},
+		{
+			"label": "HBMK2: Build test1",
+			"input": "test1.prg",
 			"type": "HBMK2",
 			"group": "build",
-			"input": "start.hbp",
-			"problemMatcher": [
-				"$harbour",
-				"$msCompile"
-			],
-			"label": "HBMK2: Builda start.hbp",
-			"windows": {
-				"setupBatch": "c:\\harbour\\start64.bat"
-			}
+			"extraArgs": ["start.hbp"],
+			"windows": {"setupBatch": "c:\\harbour\\start64.bat"}			
 		}
 	]
 }

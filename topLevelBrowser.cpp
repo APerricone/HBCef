@@ -1,7 +1,11 @@
 #include "hbcef.h"
 #include <views/cef_window.h>
 #include <views/cef_browser_view.h>
+#include <cef_v8.h>
 #include <hbxvm.h>
+#include <hbapicls.h>
+#include <hbapi.h>
+#include <hbapierr.h>
 FORWARD_GETCLASSID(TOPLEVELBROWSER);
 
 class SimpleHandler;
@@ -12,7 +16,7 @@ namespace {
 // implementation for the CefWindow that hosts the Views-based browser.
 class SimpleWindowDelegate : public CefWindowDelegate {
 public:
-    explicit SimpleWindowDelegate(CefRefPtr<CefBrowserView> browser_view,int _w, int _h) : 
+    explicit SimpleWindowDelegate(CefRefPtr<CefBrowserView> browser_view,int _w, int _h) :
         browser_view_(browser_view), w(_w), h(_h)  {}
 
     void OnWindowCreated(CefRefPtr<CefWindow> window) override {
@@ -75,10 +79,22 @@ private:
 
 }  // namespace
 
+class ImplementedBrowserCallbacks : public MyBrowserCallbacks {
+public:
+    ImplementedBrowserCallbacks(PHB_ITEM _pSelf) : pSelf(_pSelf) {}
+
+    virtual void OnContextCreated(  CefRefPtr<CefBrowser> browser,
+                                    CefRefPtr<CefFrame> frame,
+                                    CefRefPtr<CefV8Context> context) override;
+
+private:
+    PHB_ITEM pSelf;
+};
+
 HB_FUNC( CEF_TOPLEVELBROWSER_NEW ) {
 
     // SimpleHandler implements browser-level callbacks.
-    CefRefPtr<SimpleHandler> handler(new SimpleHandler());
+    CefRefPtr<SimpleHandler> handler = SimpleHandler::GetInstance();
     hb_xvmSetLine(__LINE__);
     // Specify CEF browser settings here.
     CefBrowserSettings browser_settings;
@@ -101,10 +117,116 @@ HB_FUNC( CEF_TOPLEVELBROWSER_NEW ) {
     //hb_retCef((CefBaseRefCounted*)window.get());
     //hb_xvmSetLine(__LINE__);
     initCefObj(browser_view.get(), GETCLASSID(TOPLEVELBROWSER));
+    handler->RegisterContextCreated(browser_view->GetBrowser(), new ImplementedBrowserCallbacks(hb_stackSelfItem()));
 }
 
 HB_FUNC( CEF_TOPLEVELBROWSER_LOADURL ) {
-    CefBrowserView* renderer = (CefBrowserView*)hb_selfCef();
-    renderer->GetBrowser()->GetMainFrame()->LoadURL(hb_parc(1));
+    CefBrowserView* browserView = (CefBrowserView*)hb_selfCef();
+    browserView->GetBrowser()->GetMainFrame()->LoadURL(hb_parCefString(1));
     hb_ret();
+}
+
+void ImplementedBrowserCallbacks::OnContextCreated(  CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefFrame> frame,
+                        CefRefPtr<CefV8Context> context) {
+    static HB_SIZE iOnContextCreated = 0;
+    if(iOnContextCreated==0) {
+        iOnContextCreated = hb_clsGetVarIndex(GETCLASSID(TOPLEVELBROWSER),hb_dynsymGet("bOnContextCreated"));
+    }
+    PHB_ITEM pOnInitialized = hb_itemNew( NULL );
+    hb_arrayGet(pSelf,iOnContextCreated,pOnInitialized);
+    if(pOnInitialized && HB_IS_EVALITEM( pOnInitialized ))
+        hb_evalBlock1(pOnInitialized, pSelf);
+}
+
+HB_FUNC( CEF_TOPLEVELBROWSER_ADDJAVASCRIPT ) { ///(cName, oJS)
+    CefBrowserView* browserView = (CefBrowserView*)hb_selfCef();
+    CefRefPtr<CefV8Context> context = browserView->GetBrowser()->GetMainFrame()->GetV8Context();
+    CefRefPtr<CefV8Value> object = context->GetGlobal();
+    hb_retl(object->SetValue(hb_parc(1), HBtoV8Value(hb_parc(1), hb_param(2, HB_IT_ANY)), V8_PROPERTY_ATTRIBUTE_NONE)? HB_TRUE : HB_FALSE);
+}
+
+CefRefPtr<CefV8Value> HBtoV8Value_HASH(PHB_ITEM pItem);
+CefRefPtr<CefV8Value> HBtoV8Value_JSON(PHB_ITEM pItem);
+CefRefPtr<CefV8Value> HBtoV8Value_ARRAY(PHB_ITEM pItem);
+
+CefRefPtr<CefV8Value> HBtoV8Value(const CefString& cName, PHB_ITEM pItem) {
+	HB_TYPE t = hb_itemType(pItem);
+	switch(t) {
+	case HB_IT_NIL:       //0x00000
+		return CefV8Value::CreateUndefined();
+	case HB_IT_INTEGER:   //0x00002
+	case HB_IT_DOUBLE:    //0x00010
+	case HB_IT_LONG:      //0x00008
+	case HB_IT_NUMERIC:   //( HB_IT_INTEGER | HB_IT_LONG | HB_IT_DOUBLE )
+	case HB_IT_NUMINT:    //( HB_IT_INTEGER | HB_IT_LONG )
+		return CefV8Value::CreateDouble(hb_itemGetND(pItem));
+	case HB_IT_LOGICAL:   //0x00080
+        return CefV8Value::CreateBool(hb_itemGetL(pItem)!=HB_FALSE);
+	case HB_IT_STRING:    //0x00400
+	case HB_IT_MEMOFLAG:  //0x00800
+	case HB_IT_MEMO:      //( HB_IT_MEMOFLAG | HB_IT_STRING )
+	case HB_IT_BYREF:     //0x02000
+	case HB_IT_MEMVAR:    //0x04000
+		return CefV8Value::CreateString(hbToString(pItem));
+	case HB_IT_HASH:      //0x00004
+		return HBtoV8Value_HASH(pItem);
+
+	//case HB_IT_OBJECT:    //HB_IT_ARRAY
+	case HB_IT_ARRAY:     //0x08000
+	{
+		HB_USHORT clsId = hb_objGetClass(pItem);
+		//if(clsId>0 && clsId!=getJSVALUEClassId()) break; //Error
+		if(clsId==0) {
+            return HBtoV8Value_ARRAY(pItem);
+		} else {
+			return HBtoV8Value_JSON(pItem); // TODO better
+		}
+	}
+	// unsupported types:
+	//case HB_IT_DATE:      //0x00020 CefV8Value::CreateDate
+	//case HB_IT_TIMESTAMP: //0x00040 CefV8Value::CreateDate
+	//case HB_IT_ALIAS:     //0x00200
+	//case HB_IT_SYMBOL:    //0x00100 CefV8Value::CreateFunction
+	//case HB_IT_BLOCK:     //0x01000 CefV8Value::CreateFunction
+	//case HB_IT_ENUM:      //0x10000
+	//case HB_IT_EXTREF:    //0x20000
+	//case HB_IT_DEFAULT:   //0x40000
+	//case HB_IT_RECOVER:   //0x80000
+	//case HB_IT_DATETIME:  //( HB_IT_DATE | HB_IT_TIMESTAMP ) CefV8Value::CreateDate
+	}
+	hb_errRT_BASE(EG_ARG, 12, "unable to convert",  HB_ERR_FUNCNAME, 1, pItem);
+	return CefV8Value::CreateUndefined();
+}
+
+CefRefPtr<CefV8Value> HBtoV8Value_JSON(PHB_ITEM pItem) {
+    hb_errRT_BASE(EG_ARG, 12, "unable to convert",  HB_ERR_FUNCNAME, 1, pItem);
+    return CefV8Value::CreateUndefined();
+}
+
+CefRefPtr<CefV8Value> HBtoV8Value_ARRAY(PHB_ITEM pItem) {
+    HB_SIZE nLen = hb_itemSize( pItem );
+    CefRefPtr<CefV8Value> pRet = CefV8Value::CreateArray(nLen);
+    for(int nIndex = 1; nIndex <= nLen; ++nIndex ) {
+        PHB_ITEM pElement = hb_arrayGetItemPtr( pItem, nIndex );
+        pRet->SetValue(nIndex-1, HBtoV8Value("",pElement));
+    }
+    return pRet;
+}
+
+CefRefPtr<CefV8Value> HBtoV8Value_HASH(PHB_ITEM pItem) {
+    HB_SIZE nLen = hb_hashLen( pItem );
+    CefRefPtr<CefV8Value> pRet = CefV8Value::CreateObject(nullptr, nullptr);
+    for(int nIndex = 1; nIndex <= nLen; ++nIndex ) {
+        PHB_ITEM pValue = hb_hashGetValueAt( pItem, nIndex );
+        PHB_ITEM pKey = hb_hashGetKeyAt( pItem, nIndex );
+        if( HB_IS_STRING( pKey ) ) {
+            CefString cKey = hbToString( pKey );
+            CefRefPtr<CefV8Value> cefValue = HBtoV8Value(cKey,pValue);
+            pRet->SetValue(cKey, cefValue, V8_PROPERTY_ATTRIBUTE_NONE);
+        } else if( HB_IS_INTEGER( pKey ) ) {
+            pRet->SetValue(hb_itemGetNI(pKey), HBtoV8Value("",pValue));
+        }
+    }
+    return pRet;
 }
